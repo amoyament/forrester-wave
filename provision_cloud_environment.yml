@@ -1,0 +1,19 @@
+---
+- name: Provision Cloud Environment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Display provisioning parameters
+      ansible.builtin.debug:
+        msg:
+          - "Environment: {{ environment_name }}"
+          - "Instance Size: {{ instance_size }}"
+          - "Region: {{ region }}"
+          - "TTL: {{ ttl_hours }} hours"
+          - "Database Engine: {{ database_engine }}"
+          - "Monitoring: {{ enable_monitoring }}"
+
+    - name: Provision cloud environment
+      ansible.builtin.debug:
+        msg: "Provisioning {{ environment_name }} in {{ region }} with {{ instance_size }} instance (TTL: {{ ttl_hours }}h)"
