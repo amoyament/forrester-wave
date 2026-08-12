@@ -8,9 +8,6 @@
       ansible.controller.workflow_launch:
         workflow_template: "RHEL - Approved Patch Deployment"
         wait: false
-        controller_host: "{{ controller_host }}"
-        controller_oauthtoken: "{{ controller_token }}"
-        validate_certs: false
       register: workflow_result
 
     - name: Report workflow job ID
