@@ -193,20 +193,6 @@
         msg: "CloudWatch CPU alarm configured for {{ environment_name }}"
       when: enable_monitoring == "yes"
 
-    - name: Schedule auto-termination ({{ ttl_hours }} hours)
-      amazon.aws.cloudwatchevent_rule:
-        name: "{{ safe_name }}-ttl-shutdown"
-        schedule_expression: "rate({{ ttl_hours }} hours)"
-        state: present
-        region: "{{ aws_region }}"
-        targets:
-          - id: "{{ safe_name }}-stop"
-            arn: "arn:aws:ssm:{{ aws_region }}::automation-definition/AWS-StopEC2Instance"
-            input:
-              InstanceId:
-                - "{{ ec2_result.instances[0].instance_id }}"
-      register: ttl_rule
-
     - name: Auto-shutdown scheduled
       ansible.builtin.debug:
         msg: "{{ environment_name }} will auto-terminate in {{ ttl_hours }} hours"
