@@ -3,6 +3,19 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    aws_region: "{{ region }}"
+    instance_types:
+      "t3.small": "t3.small"
+      "t3.medium": "t3.medium"
+      "t3.large": "t3.large"
+    db_ports:
+      postgresql: 5432
+      mysql: 3306
+    ami_ids:
+      us-east-1: ami-0a62b599d0176c4e7
+      us-west-2: ami-04761b0808e04b499
+      eu-west-1: ami-06f878aa175fccba7
   tasks:
     - name: Display provisioning request
       ansible.builtin.debug:
@@ -51,24 +64,153 @@
       ansible.builtin.debug:
         msg: "Approved. Provisioning {{ environment_name }} in {{ region }}."
 
-    - name: Configure instance ({{ instance_size }})
-      ansible.builtin.debug:
-        msg: "Launching {{ instance_size }} instance in {{ region }}"
+    - name: Create security group
+      amazon.aws.ec2_security_group:
+        name: "{{ environment_name }}-sg"
+        description: "Security group for {{ environment_name }}"
+        region: "{{ aws_region }}"
+        rules:
+          - proto: tcp
+            from_port: 22
+            to_port: 22
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 80
+            to_port: 80
+            cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 443
+            to_port: 443
+            cidr_ip: 0.0.0.0/0
+        tags:
+          Name: "{{ environment_name }}-sg"
+          Environment: "{{ environment_name }}"
+          ManagedBy: ansible-portal
+      register: sg_result
 
-    - name: Configure database
+    - name: Launch EC2 instance ({{ instance_size }})
+      amazon.aws.ec2_instance:
+        name: "{{ environment_name }}"
+        instance_type: "{{ instance_types[instance_size] }}"
+        image_id: "{{ ami_ids[aws_region] }}"
+        region: "{{ aws_region }}"
+        security_groups:
+          - "{{ sg_result.group_id }}"
+        wait: true
+        tags:
+          Environment: "{{ environment_name }}"
+          ManagedBy: ansible-portal
+          TTL: "{{ ttl_hours }}"
+        state: running
+      register: ec2_result
+
+    - name: EC2 instance launched
       ansible.builtin.debug:
-        msg: "Setting up {{ database_engine }} database"
+        msg: "Instance {{ ec2_result.instances[0].instance_id }} running at {{ ec2_result.instances[0].public_ip_address | default('pending') }}"
+
+    - name: Look up default VPC subnets
+      amazon.aws.ec2_vpc_subnet_info:
+        region: "{{ aws_region }}"
+        filters:
+          default-for-az: "true"
+      register: default_subnets
       when: database_engine != "none"
 
-    - name: Configure monitoring
+    - name: Create RDS database subnet group
+      amazon.aws.rds_subnet_group:
+        name: "{{ environment_name }}-dbsubnet"
+        description: "DB subnet group for {{ environment_name }}"
+        region: "{{ aws_region }}"
+        subnets: "{{ default_subnets.subnets | map(attribute='id') | list }}"
+        state: present
+      when: database_engine != "none"
+
+    - name: Create database security group
+      amazon.aws.ec2_security_group:
+        name: "{{ environment_name }}-db-sg"
+        description: "Database security group for {{ environment_name }}"
+        region: "{{ aws_region }}"
+        rules:
+          - proto: tcp
+            from_port: "{{ db_ports[database_engine] }}"
+            to_port: "{{ db_ports[database_engine] }}"
+            group_id: "{{ sg_result.group_id }}"
+        tags:
+          Name: "{{ environment_name }}-db-sg"
+          Environment: "{{ environment_name }}"
+          ManagedBy: ansible-portal
+      register: db_sg_result
+      when: database_engine != "none"
+
+    - name: Provision {{ database_engine }} database
+      amazon.aws.rds_instance:
+        db_instance_identifier: "{{ environment_name }}-db"
+        db_instance_class: db.t3.micro
+        engine: "{{ database_engine }}"
+        master_username: dbadmin
+        master_user_password: "Ch4ng3M3N0w!2026"
+        allocated_storage: 20
+        region: "{{ aws_region }}"
+        db_subnet_group_name: "{{ environment_name }}-dbsubnet"
+        vpc_security_group_ids:
+          - "{{ db_sg_result.group_id }}"
+        tags:
+          Environment: "{{ environment_name }}"
+          ManagedBy: ansible-portal
+        state: present
+        wait: true
+      register: rds_result
+      when: database_engine != "none"
+
+    - name: Database provisioned
       ansible.builtin.debug:
-        msg: "Enabling monitoring for {{ environment_name }}"
+        msg: "{{ database_engine }} endpoint: {{ rds_result.endpoint.address }}:{{ rds_result.endpoint.port }}"
+      when: database_engine != "none"
+
+    - name: Enable CloudWatch monitoring
+      amazon.aws.cloudwatch_metric_alarm:
+        alarm_name: "{{ environment_name }}-cpu-alarm"
+        metric_name: CPUUtilization
+        namespace: AWS/EC2
+        statistic: Average
+        comparison: GreaterThanThreshold
+        threshold: 80.0
+        period: 300
+        evaluation_periods: 2
+        dimensions:
+          InstanceId: "{{ ec2_result.instances[0].instance_id }}"
+        region: "{{ aws_region }}"
+        state: present
       when: enable_monitoring == "yes"
 
-    - name: Set TTL auto-shutdown
+    - name: Monitoring enabled
       ansible.builtin.debug:
-        msg: "Environment {{ environment_name }} will auto-terminate in {{ ttl_hours }} hours"
+        msg: "CloudWatch CPU alarm configured for {{ environment_name }}"
+      when: enable_monitoring == "yes"
+
+    - name: Schedule auto-termination ({{ ttl_hours }} hours)
+      amazon.aws.cloudwatchevent_rule:
+        name: "{{ environment_name }}-ttl-shutdown"
+        schedule_expression: "rate({{ ttl_hours }} hours)"
+        state: present
+        region: "{{ aws_region }}"
+        targets:
+          - id: "{{ environment_name }}-stop"
+            arn: "arn:aws:ssm:{{ aws_region }}::automation-definition/AWS-StopEC2Instance"
+            input:
+              InstanceId:
+                - "{{ ec2_result.instances[0].instance_id }}"
+      register: ttl_rule
+
+    - name: Auto-shutdown scheduled
+      ansible.builtin.debug:
+        msg: "{{ environment_name }} will auto-terminate in {{ ttl_hours }} hours"
 
     - name: Provisioning complete
       ansible.builtin.debug:
-        msg: "Environment {{ environment_name }} is ready in {{ region }}"
+        msg:
+          - "Environment {{ environment_name }} is ready in {{ region }}"
+          - "Instance: {{ ec2_result.instances[0].instance_id }} ({{ ec2_result.instances[0].public_ip_address | default('pending') }})"
+          - "{{ 'Database: ' + rds_result.endpoint.address + ':' + rds_result.endpoint.port|string if database_engine != 'none' else 'Database: none' }}"
+          - "{{ 'Monitoring: enabled' if enable_monitoring == 'yes' else 'Monitoring: disabled' }}"
+          - "TTL: {{ ttl_hours }} hours"
