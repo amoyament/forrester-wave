@@ -1,0 +1,52 @@
+---
+# Mock provisioning playbook that runs AFTER the approval node in the workflow.
+# Simulates provisioning a full-stack dev environment and outputs connection info.
+# This is the job template that sits after the approval node in the workflow template.
+- name: Provision Full-Stack Dev Environment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Validate parameters
+      ansible.builtin.debug:
+        msg: >-
+          Provisioning environment '{{ environment_name }}'
+          with instance size {{ instance_size }}
+          in region {{ region }}
+          with {{ ttl_hours }}h TTL
+
+    - name: Provision compute instance
+      ansible.builtin.debug:
+        msg: "Provisioning {{ instance_size }} instance in {{ region }}..."
+
+    - name: Simulate provisioning delay
+      ansible.builtin.pause:
+        seconds: 10
+
+    - name: Provision database
+      ansible.builtin.debug:
+        msg: "Provisioning {{ database_engine }} database..."
+      when: database_engine != "none"
+
+    - name: Configure monitoring
+      ansible.builtin.debug:
+        msg: "Deploying monitoring stack..."
+      when: enable_monitoring == "yes"
+
+    - name: Display connection information
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          ENVIRONMENT PROVISIONED SUCCESSFULLY
+          ============================================
+          Environment: {{ environment_name }}
+          Region:      {{ region }}
+          Instance:    {{ instance_size }}
+          TTL:         {{ ttl_hours }} hours
+          --------------------------------------------
+          App URL:     https://{{ environment_name }}.{{ region }}.acme-global.dev
+          SSH:         ssh admin@{{ environment_name }}.{{ region }}.acme-global.dev
+          DB Endpoint: {{ environment_name }}-db.{{ region }}.acme-global.dev:5432
+          Monitoring:  https://{{ environment_name }}-grafana.{{ region }}.acme-global.dev
+          ============================================
+          Auto-destroy scheduled for {{ ttl_hours }} hours from now.

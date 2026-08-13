@@ -1,0 +1,9 @@
+---
+- name: Execute Cloud Provisioning
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Provisioning approved, deploying resources
+      ansible.builtin.debug:
+        msg: "Provisioning approved. Deploying resources now."

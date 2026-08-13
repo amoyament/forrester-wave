@@ -4,7 +4,7 @@
   connection: local
   gather_facts: false
   tasks:
-    - name: Display provisioning parameters
+    - name: Display provisioning request
       ansible.builtin.debug:
         msg:
           - "Environment: {{ environment_name }}"
@@ -14,6 +14,35 @@
           - "Database Engine: {{ database_engine }}"
           - "Monitoring: {{ enable_monitoring }}"
 
-    - name: Provision cloud environment
+    - name: Submit for approval and wait
+      ansible.controller.workflow_launch:
+        workflow_template: "Cloud - Provision Environment (Approval Workflow)"
+        wait: true
+        timeout: 3600
+      register: workflow_result
+
+    - name: Approval granted, proceeding with provisioning
       ansible.builtin.debug:
-        msg: "Provisioning {{ environment_name }} in {{ region }} with {{ instance_size }} instance (TTL: {{ ttl_hours }}h)"
+        msg: "Workflow {{ workflow_result.id }} approved. Provisioning {{ environment_name }} in {{ region }}."
+
+    - name: Configure instance ({{ instance_size }})
+      ansible.builtin.debug:
+        msg: "Launching {{ instance_size }} instance in {{ region }}"
+
+    - name: Configure database
+      ansible.builtin.debug:
+        msg: "Setting up {{ database_engine }} database"
+      when: database_engine != "none"
+
+    - name: Configure monitoring
+      ansible.builtin.debug:
+        msg: "Enabling monitoring for {{ environment_name }}"
+      when: enable_monitoring == "yes"
+
+    - name: Set TTL auto-shutdown
+      ansible.builtin.debug:
+        msg: "Environment {{ environment_name }} will auto-terminate in {{ ttl_hours }} hours"
+
+    - name: Provisioning complete
+      ansible.builtin.debug:
+        msg: "Environment {{ environment_name }} is ready in {{ region }}"

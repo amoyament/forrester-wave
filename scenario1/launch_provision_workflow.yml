@@ -1,0 +1,29 @@
+---
+# Wrapper playbook for the "Provision Full-Stack Dev Environment" job template.
+# Launches a workflow template that includes an approval node before provisioning.
+# The portal's job template runs THIS playbook. It waits for the workflow to complete
+# (including approval), so the portal stays "in progress" until approved and provisioned.
+- name: Launch Approved Full-Stack Provisioning
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Launch workflow with approval gate
+      ansible.controller.workflow_launch:
+        workflow_template: "Provision Full-Stack Dev Environment - Approved"
+        extra_vars:
+          environment_name: "{{ environment_name }}"
+          instance_size: "{{ instance_size }}"
+          region: "{{ region }}"
+          ttl_hours: "{{ ttl_hours }}"
+          database_engine: "{{ database_engine }}"
+          enable_monitoring: "{{ enable_monitoring }}"
+        wait: true
+        timeout: 600
+      register: workflow_result
+
+    - name: Display provisioning result
+      ansible.builtin.debug:
+        msg: >-
+          Workflow completed with status: {{ workflow_result.status }}.
+          Provisioning output available in workflow job {{ workflow_result.id }}.

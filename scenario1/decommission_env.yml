@@ -1,0 +1,24 @@
+---
+# Mock decommission playbook for the "Decommission Environment" job template.
+- name: Decommission Environment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Decommission environment
+      ansible.builtin.debug:
+        msg: "Decommissioning environment '{{ environment_name }}'..."
+
+    - name: Simulate teardown
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Confirm decommission
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          ENVIRONMENT DECOMMISSIONED
+          ============================================
+          Environment: {{ environment_name }}
+          Status:      All resources removed
+          ============================================
