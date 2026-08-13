@@ -96,6 +96,7 @@
         instance_type: "{{ instance_types[instance_size] }}"
         image_id: "{{ ami_ids[aws_region] }}"
         region: "{{ aws_region }}"
+        key_name: aubreyKey
         security_groups:
           - "{{ sg_result.group_id }}"
         wait: true
@@ -202,6 +203,7 @@
         msg:
           - "Environment {{ environment_name }} is ready in {{ region }}"
           - "Instance: {{ ec2_result.instances[0].instance_id }} ({{ ec2_result.instances[0].public_ip_address | default('pending') }})"
+          - "SSH: ssh -i aubreyKey.pem ec2-user@{{ ec2_result.instances[0].public_ip_address | default('pending') }}"
           - "{{ 'Database: ' + rds_result.endpoint.address + ':' + rds_result.endpoint.port|string if database_engine != 'none' else 'Database: none' }}"
           - "{{ 'Monitoring: enabled' if enable_monitoring == 'yes' else 'Monitoring: disabled' }}"
           - "TTL: {{ ttl_hours }} hours"
