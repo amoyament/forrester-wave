@@ -86,6 +86,7 @@
           Name: "{{ environment_name }}-sg"
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
+          owner: forrest
       register: sg_result
 
     - name: Launch EC2 instance ({{ instance_size }})
@@ -101,6 +102,7 @@
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
           TTL: "{{ ttl_hours }}"
+          owner: forrest
         state: running
       register: ec2_result
 
@@ -139,6 +141,7 @@
           Name: "{{ environment_name }}-db-sg"
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
+          owner: forrest
       register: db_sg_result
       when: database_engine != "none"
 
@@ -157,6 +160,7 @@
         tags:
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
+          owner: forrest
         state: present
         wait: true
       register: rds_result
