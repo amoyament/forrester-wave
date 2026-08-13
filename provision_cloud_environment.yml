@@ -16,6 +16,7 @@
       us-east-1: ami-0a62b599d0176c4e7
       us-west-2: ami-04761b0808e04b499
       eu-west-1: ami-06f878aa175fccba7
+    safe_name: "{{ environment_name | regex_replace('[^A-Za-z0-9._-]', '-') }}"
   tasks:
     - name: Display provisioning request
       ansible.builtin.debug:
@@ -66,7 +67,7 @@
 
     - name: Create security group
       amazon.aws.ec2_security_group:
-        name: "{{ environment_name }}-sg"
+        name: "{{ safe_name }}-sg"
         description: "Security group for {{ environment_name }}"
         region: "{{ aws_region }}"
         rules:
@@ -83,7 +84,7 @@
             to_port: 443
             cidr_ip: 0.0.0.0/0
         tags:
-          Name: "{{ environment_name }}-sg"
+          Name: "{{ safe_name }}-sg"
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
           owner: forrest
@@ -120,7 +121,7 @@
 
     - name: Create RDS database subnet group
       amazon.aws.rds_subnet_group:
-        name: "{{ environment_name }}-dbsubnet"
+        name: "{{ safe_name }}-dbsubnet"
         description: "DB subnet group for {{ environment_name }}"
         region: "{{ aws_region }}"
         subnets: "{{ default_subnets.subnets | map(attribute='id') | list }}"
@@ -129,7 +130,7 @@
 
     - name: Create database security group
       amazon.aws.ec2_security_group:
-        name: "{{ environment_name }}-db-sg"
+        name: "{{ safe_name }}-db-sg"
         description: "Database security group for {{ environment_name }}"
         region: "{{ aws_region }}"
         rules:
@@ -138,7 +139,7 @@
             to_port: "{{ db_ports[database_engine] }}"
             group_id: "{{ sg_result.group_id }}"
         tags:
-          Name: "{{ environment_name }}-db-sg"
+          Name: "{{ safe_name }}-db-sg"
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
           owner: forrest
@@ -147,14 +148,14 @@
 
     - name: Provision {{ database_engine }} database
       amazon.aws.rds_instance:
-        db_instance_identifier: "{{ environment_name }}-db"
+        db_instance_identifier: "{{ safe_name }}-db"
         db_instance_class: db.t3.micro
         engine: "{{ database_engine }}"
         master_username: dbadmin
-        master_user_password: "Ch4ng3M3N0w!2026"
+        master_user_password: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=24') }}"  # notsecret
         allocated_storage: 20
         region: "{{ aws_region }}"
-        db_subnet_group_name: "{{ environment_name }}-dbsubnet"
+        db_subnet_group_name: "{{ safe_name }}-dbsubnet"
         vpc_security_group_ids:
           - "{{ db_sg_result.group_id }}"
         tags:
@@ -173,7 +174,7 @@
 
     - name: Enable CloudWatch monitoring
       amazon.aws.cloudwatch_metric_alarm:
-        alarm_name: "{{ environment_name }}-cpu-alarm"
+        alarm_name: "{{ safe_name }}-cpu-alarm"
         metric_name: CPUUtilization
         namespace: AWS/EC2
         statistic: Average
@@ -194,12 +195,12 @@
 
     - name: Schedule auto-termination ({{ ttl_hours }} hours)
       amazon.aws.cloudwatchevent_rule:
-        name: "{{ environment_name }}-ttl-shutdown"
+        name: "{{ safe_name }}-ttl-shutdown"
         schedule_expression: "rate({{ ttl_hours }} hours)"
         state: present
         region: "{{ aws_region }}"
         targets:
-          - id: "{{ environment_name }}-stop"
+          - id: "{{ safe_name }}-stop"
             arn: "arn:aws:ssm:{{ aws_region }}::automation-definition/AWS-StopEC2Instance"
             input:
               InstanceId:
