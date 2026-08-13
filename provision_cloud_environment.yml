@@ -14,16 +14,35 @@
           - "Database Engine: {{ database_engine }}"
           - "Monitoring: {{ enable_monitoring }}"
 
-    - name: Submit for approval and wait
+    - name: Submit for approval
       ansible.controller.workflow_launch:
         workflow_template: "Cloud - Provision Environment (Approval Workflow)"
-        wait: true
-        timeout: 3600
+        wait: false
       register: workflow_result
+      no_log: true
 
-    - name: Approval granted, proceeding with provisioning
+    - name: Awaiting approval
+      ansible.builtin.uri:
+        url: "{{ lookup('env', 'CONTROLLER_HOST') }}/api/controller/v2/workflow_jobs/{{ workflow_result.id }}/"
+        method: GET
+        user: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+        password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+        force_basic_auth: true
+        validate_certs: false
+      register: wf_status
+      until: wf_status.json.status in ['successful', 'failed', 'error', 'canceled']
+      retries: 360
+      delay: 10
+      no_log: true
+
+    - name: Check approval result
+      ansible.builtin.fail:
+        msg: "Approval was denied or workflow failed"
+      when: wf_status.json.status != 'successful'
+
+    - name: Approval granted
       ansible.builtin.debug:
-        msg: "Workflow {{ workflow_result.id }} approved. Provisioning {{ environment_name }} in {{ region }}."
+        msg: "Approved. Provisioning {{ environment_name }} in {{ region }}."
 
     - name: Configure instance ({{ instance_size }})
       ansible.builtin.debug:
