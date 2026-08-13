@@ -14,16 +14,23 @@
           - "Database Engine: {{ database_engine }}"
           - "Monitoring: {{ enable_monitoring }}"
 
-    - name: Submit for approval
-      ansible.controller.workflow_launch:
-        workflow_template: "Cloud - Provision Environment (Approval Workflow)"
-        wait: false
-      register: workflow_result
+    - name: Sending request for approval
+      ansible.builtin.uri:
+        url: "{{ lookup('env', 'CONTROLLER_HOST') }}/api/controller/v2/workflow_job_templates/45/launch/"
+        method: POST
+        user: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
+        password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
+        force_basic_auth: true
+        validate_certs: false
+        body_format: json
+        body: {}
+        status_code: 201
+      register: launch_result
       no_log: true
 
-    - name: Awaiting approval
+    - name: Approval pending
       ansible.builtin.uri:
-        url: "{{ lookup('env', 'CONTROLLER_HOST') }}/api/controller/v2/workflow_jobs/{{ workflow_result.id }}/"
+        url: "{{ lookup('env', 'CONTROLLER_HOST') }}/api/controller/v2/workflow_jobs/{{ launch_result.json.id }}/"
         method: GET
         user: "{{ lookup('env', 'CONTROLLER_USERNAME') }}"
         password: "{{ lookup('env', 'CONTROLLER_PASSWORD') }}"
@@ -35,9 +42,9 @@
       delay: 10
       no_log: true
 
-    - name: Check approval result
+    - name: Approval denied
       ansible.builtin.fail:
-        msg: "Approval was denied or workflow failed"
+        msg: "Request was denied or timed out"
       when: wf_status.json.status != 'successful'
 
     - name: Approval granted
