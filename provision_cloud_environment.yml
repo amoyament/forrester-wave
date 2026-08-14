@@ -37,7 +37,14 @@
         force_basic_auth: true
         validate_certs: false
         body_format: json
-        body: {}
+        body:
+          extra_vars:
+            requested_environment: "{{ environment_name }}"
+            requested_instance_size: "{{ instance_size }}"
+            requested_region: "{{ region }}"
+            requested_ttl: "{{ ttl_hours }}"
+            requested_database: "{{ database_engine }}"
+            requested_monitoring: "{{ enable_monitoring }}"
         status_code: 201
       register: launch_result
       no_log: true
@@ -175,7 +182,7 @@
 
     - name: Enable CloudWatch monitoring
       amazon.aws.cloudwatch_metric_alarm:
-        alarm_name: "{{ safe_name }}-cpu-alarm"
+        name: "{{ safe_name }}-cpu-alarm"
         metric_name: CPUUtilization
         namespace: AWS/EC2
         statistic: Average
