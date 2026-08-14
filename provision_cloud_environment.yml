@@ -47,7 +47,7 @@
             requested_monitoring: "{{ enable_monitoring }}"
         status_code: 201
       register: launch_result
-      # no_log: true
+      no_log: true
 
     - name: Approval pending
       ansible.builtin.uri:
@@ -61,7 +61,7 @@
       until: wf_status.json.status in ['successful', 'failed', 'error', 'canceled']
       retries: 360
       delay: 10
-      # no_log: true
+      no_log: true
 
     - name: Approval denied
       ansible.builtin.fail:
