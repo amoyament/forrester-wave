@@ -1,0 +1,142 @@
+---
+- name: Decommission Cloud Environment
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aws_region: "{{ region }}"
+    safe_name: "{{ environment_name | regex_replace('[^A-Za-z0-9._-]', '-') }}"
+  tasks:
+    - name: Display decommission request
+      ansible.builtin.debug:
+        msg:
+          - "Environment: {{ environment_name }}"
+          - "Region: {{ region }}"
+          - "Safe name: {{ safe_name }}"
+
+    # ---------------------------------------------------------------
+    # Step 1: Find the EC2 instance by Name tag
+    # ---------------------------------------------------------------
+    - name: Find EC2 instance by Name tag
+      amazon.aws.ec2_instance_info:
+        region: "{{ aws_region }}"
+        filters:
+          "tag:Name": "{{ environment_name }}"
+          instance-state-name:
+            - running
+            - stopped
+            - stopping
+            - pending
+      register: ec2_info
+
+    - name: Report EC2 lookup result
+      ansible.builtin.debug:
+        msg: >-
+          {{
+            'Found instance ' + ec2_info.instances[0].instance_id
+            if ec2_info.instances | length > 0
+            else 'No running or stopped instance found with Name=' + environment_name
+          }}
+
+    # ---------------------------------------------------------------
+    # Step 2: Terminate the EC2 instance
+    # ---------------------------------------------------------------
+    - name: Terminate EC2 instance
+      amazon.aws.ec2_instance:
+        instance_ids:
+          - "{{ ec2_info.instances[0].instance_id }}"
+        region: "{{ aws_region }}"
+        state: terminated
+        wait: false
+      register: ec2_terminate_result
+      when: ec2_info.instances | length > 0
+
+    - name: EC2 termination initiated
+      ansible.builtin.debug:
+        msg: "Termination initiated for {{ ec2_info.instances[0].instance_id }}"
+      when: ec2_info.instances | length > 0
+
+    # ---------------------------------------------------------------
+    # Step 3: Delete CloudWatch alarm (optional resource)
+    # ---------------------------------------------------------------
+    - name: Delete CloudWatch CPU alarm
+      amazon.aws.cloudwatch_metric_alarm:
+        alarm_name: "{{ safe_name }}-cpu-alarm"
+        region: "{{ aws_region }}"
+        state: absent
+      register: cw_result
+      ignore_errors: true
+
+    # ---------------------------------------------------------------
+    # Step 4: Delete RDS instance (optional resource)
+    # ---------------------------------------------------------------
+    - name: Delete RDS instance
+      amazon.aws.rds_instance:
+        db_instance_identifier: "{{ safe_name }}-db"
+        region: "{{ aws_region }}"
+        skip_final_snapshot: true
+        state: absent
+        wait: true
+      register: rds_result
+      ignore_errors: true
+
+    # ---------------------------------------------------------------
+    # Step 5: Delete RDS subnet group (optional resource)
+    # ---------------------------------------------------------------
+    - name: Delete RDS subnet group
+      amazon.aws.rds_subnet_group:
+        name: "{{ safe_name }}-dbsubnet"
+        region: "{{ aws_region }}"
+        state: absent
+      register: dbsubnet_result
+      ignore_errors: true
+
+    # ---------------------------------------------------------------
+    # Step 6: Wait for EC2 instance to reach terminated state
+    # ---------------------------------------------------------------
+    - name: Wait for EC2 instance to be terminated
+      amazon.aws.ec2_instance_info:
+        region: "{{ aws_region }}"
+        instance_ids:
+          - "{{ ec2_info.instances[0].instance_id }}"
+      register: ec2_wait
+      until: >-
+        ec2_wait.instances | length == 0
+        or ec2_wait.instances[0].state.name == 'terminated'
+      retries: 60
+      delay: 10
+      when: ec2_info.instances | length > 0
+
+    # ---------------------------------------------------------------
+    # Step 7: Delete security groups (after instance is terminated)
+    # ---------------------------------------------------------------
+    - name: Delete application security group
+      amazon.aws.ec2_security_group:
+        name: "{{ safe_name }}-sg"
+        region: "{{ aws_region }}"
+        state: absent
+      register: sg_result
+      ignore_errors: true
+
+    - name: Delete database security group
+      amazon.aws.ec2_security_group:
+        name: "{{ safe_name }}-db-sg"
+        region: "{{ aws_region }}"
+        state: absent
+      register: db_sg_result
+      ignore_errors: true
+
+    # ---------------------------------------------------------------
+    # Summary
+    # ---------------------------------------------------------------
+    - name: Decommission summary
+      ansible.builtin.debug:
+        msg:
+          - "Decommission complete for environment: {{ environment_name }}"
+          - "Region: {{ region }}"
+          - "EC2 instance: {{ 'terminated (' + ec2_info.instances[0].instance_id + ')' if ec2_info.instances | length > 0 else 'not found' }}"
+          - "CloudWatch alarm: {{ 'deleted' if cw_result is succeeded else 'not found or already removed' }}"
+          - "RDS instance: {{ 'deleted' if rds_result is succeeded else 'not found or already removed' }}"
+          - "RDS subnet group: {{ 'deleted' if dbsubnet_result is succeeded else 'not found or already removed' }}"
+          - "Application security group: {{ 'deleted' if sg_result is succeeded else 'not found or already removed' }}"
+          - "Database security group: {{ 'deleted' if db_sg_result is succeeded else 'not found or already removed' }}"
