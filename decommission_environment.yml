@@ -61,7 +61,7 @@
     # ---------------------------------------------------------------
     - name: Delete CloudWatch CPU alarm
       amazon.aws.cloudwatch_metric_alarm:
-        alarm_name: "{{ safe_name }}-cpu-alarm"
+        name: "{{ safe_name }}-cpu-alarm"
         region: "{{ aws_region }}"
         state: absent
       register: cw_result
