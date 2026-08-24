@@ -20,6 +20,13 @@
       us-west-2: ami-04761b0808e04b499
       eu-west-1: ami-06f878aa175fccba7
     safe_name: "{{ environment_name | regex_replace('[^A-Za-z0-9._-]', '-') }}"
+    db_password: !vault |
+      $ANSIBLE_VAULT;1.1;AES256
+      63303130636630323230343836323533656630363736336164353034633932643364623964383932
+      6135346563623336306164303061623731613634386238330a373232643363656133323737373438
+      34616134623636363533323436656439643636623330363237303562363165646164383163636638
+      3261326534303539630a313839616537376534396330393535326134623862623266393734616434
+      3532
   tasks:
     - name: Display provisioning request
       ansible.builtin.debug:
@@ -110,6 +117,40 @@
         security_groups:
           - "{{ sg_result.group_id }}"
         wait: true
+        user_data: |
+          #!/bin/bash
+          yum install -y httpd
+          cat > /var/www/html/index.html <<'LANDING'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>{{ environment_name }}</title>
+            <style>
+              body { font-family: sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+              .card { background: #16213e; border-radius: 12px; padding: 40px; max-width: 600px; box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
+              h1 { color: #e94560; margin-top: 0; }
+              .detail { margin: 12px 0; padding: 8px 12px; background: #0f3460; border-radius: 6px; }
+              .label { color: #a0a0a0; font-size: 0.85em; }
+              .value { color: #fff; font-weight: bold; }
+              .status { color: #4ecca3; font-weight: bold; font-size: 1.1em; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>{{ environment_name }}</h1>
+              <p class="status">Environment Active</p>
+              <div class="detail"><span class="label">Instance Size:</span> <span class="value">{{ instance_size }}</span></div>
+              <div class="detail"><span class="label">Region:</span> <span class="value">{{ region }}</span></div>
+              <div class="detail"><span class="label">Database:</span> <span class="value">{{ database_engine }}</span></div>
+              <div class="detail"><span class="label">Monitoring:</span> <span class="value">{{ enable_monitoring }}</span></div>
+              <div class="detail"><span class="label">TTL:</span> <span class="value">{{ ttl_hours }} hours</span></div>
+              <div class="detail"><span class="label">Provisioned by:</span> <span class="value">Ansible Automation Portal</span></div>
+            </div>
+          </body>
+          </html>
+          LANDING
+          systemctl enable httpd
+          systemctl start httpd
         tags:
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
@@ -163,7 +204,7 @@
         db_instance_class: db.t3.micro
         engine: "{{ db_engine_map[database_engine] }}"
         master_username: dbadmin
-        master_user_password: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=24') }}"  # notsecret
+        master_user_password: "{{ db_password }}"
         allocated_storage: 20
         region: "{{ aws_region }}"
         db_subnet_group_name: "{{ safe_name }}-dbsubnet"
@@ -216,5 +257,6 @@
           - "Web: http://{{ ec2_result.instances[0].public_ip_address | default('pending') }}"
           - "SSH: ssh -i dev-team.pem ec2-user@{{ ec2_result.instances[0].public_ip_address | default('pending') }}"
           - "{{ 'Database: ' + rds_result.endpoint.address + ':' + rds_result.endpoint.port|string if database_engine != 'none' else 'Database: none' }}"
+          - "{{ 'DB Connect: ' + database_engine + ' -h ' + rds_result.endpoint.address + ' -u dbadmin -p' if database_engine != 'none' else '' }}"
           - "{{ 'Monitoring: https://console.aws.amazon.com/cloudwatch/home?region=' + region + '#alarmsV2:alarm/' + safe_name + '-cpu-alarm' if enable_monitoring == 'yes' else 'Monitoring: disabled' }}"
           - "TTL: {{ ttl_hours }} hours"
