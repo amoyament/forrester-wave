@@ -219,9 +219,35 @@
         msg: "{{ database_engine }} endpoint: {{ rds_result.endpoint.address }}:{{ rds_result.endpoint.port }}"
       when: database_engine != "none"
 
-    - name: Enable CloudWatch monitoring
+    - name: Wait for RDS to be accessible
+      ansible.builtin.wait_for:
+        host: "{{ rds_result.endpoint.address }}"
+        port: "{{ db_ports[database_engine] }}"
+        delay: 10
+        timeout: 300
+      when: database_engine != "none"
+
+    - name: Initialize PostgreSQL database
+      community.postgresql.postgresql_query:
+        login_host: "{{ rds_result.endpoint.address }}"
+        login_user: dbadmin
+        login_password: "{{ db_password }}"
+        query: "CREATE DATABASE forrest;"
+      when: database_engine == "postgres"
+      ignore_errors: true
+
+    - name: Initialize MySQL database
+      community.mysql.mysql_query:
+        login_host: "{{ rds_result.endpoint.address }}"
+        login_user: dbadmin
+        login_password: "{{ db_password }}"
+        query: "CREATE DATABASE forrest;"
+      when: database_engine == "mysql"
+      ignore_errors: true
+
+    - name: Enable EC2 CPU monitoring
       amazon.aws.cloudwatch_metric_alarm:
-        name: "{{ safe_name }}-cpu-alarm"
+        name: "{{ safe_name }}-ec2-cpu-alarm"
         metric_name: CPUUtilization
         namespace: AWS/EC2
         statistic: Average
@@ -235,9 +261,62 @@
         state: present
       when: enable_monitoring == "yes"
 
+    - name: Enable RDS CPU monitoring
+      amazon.aws.cloudwatch_metric_alarm:
+        name: "{{ safe_name }}-rds-cpu-alarm"
+        metric_name: CPUUtilization
+        namespace: AWS/RDS
+        statistic: Average
+        comparison: GreaterThanThreshold
+        threshold: 70.0
+        period: 300
+        evaluation_periods: 2
+        dimensions:
+          DBInstanceIdentifier: "{{ rds_result.db_instance_identifier }}"
+        region: "{{ aws_region }}"
+        state: present
+      when: enable_monitoring == "yes" and database_engine != "none"
+
+    - name: Enable RDS storage monitoring
+      amazon.aws.cloudwatch_metric_alarm:
+        name: "{{ safe_name }}-rds-storage-alarm"
+        metric_name: FreeStorageSpace
+        namespace: AWS/RDS
+        statistic: Average
+        comparison: LessThanThreshold
+        threshold: 4294967296
+        period: 300
+        evaluation_periods: 2
+        dimensions:
+          DBInstanceIdentifier: "{{ rds_result.db_instance_identifier }}"
+        region: "{{ aws_region }}"
+        state: present
+      when: enable_monitoring == "yes" and database_engine != "none"
+
+    - name: Enable RDS connections monitoring
+      amazon.aws.cloudwatch_metric_alarm:
+        name: "{{ safe_name }}-rds-connections-alarm"
+        metric_name: DatabaseConnections
+        namespace: AWS/RDS
+        statistic: Average
+        comparison: GreaterThanThreshold
+        threshold: 80.0
+        period: 300
+        evaluation_periods: 2
+        dimensions:
+          DBInstanceIdentifier: "{{ rds_result.db_instance_identifier }}"
+        region: "{{ aws_region }}"
+        state: present
+      when: enable_monitoring == "yes" and database_engine != "none"
+
     - name: Monitoring enabled
       ansible.builtin.debug:
-        msg: "CloudWatch CPU alarm configured for {{ environment_name }}"
+        msg:
+          - "CloudWatch alarms configured for {{ environment_name }}"
+          - "EC2 CPU alarm: {{ safe_name }}-ec2-cpu-alarm"
+          - "{{ 'RDS CPU alarm: ' + safe_name + '-rds-cpu-alarm' if database_engine != 'none' else '' }}"
+          - "{{ 'RDS Storage alarm: ' + safe_name + '-rds-storage-alarm' if database_engine != 'none' else '' }}"
+          - "{{ 'RDS Connections alarm: ' + safe_name + '-rds-connections-alarm' if database_engine != 'none' else '' }}"
       when: enable_monitoring == "yes"
 
     - name: Auto-shutdown scheduled
@@ -252,6 +331,8 @@
           - "Web: http://{{ ec2_result.instances[0].public_ip_address | default('pending') }}"
           - "SSH: ssh -i dev-team.pem ec2-user@{{ ec2_result.instances[0].public_ip_address | default('pending') }}"
           - "{{ 'Database: ' + rds_result.endpoint.address + ':' + rds_result.endpoint.port|string if database_engine != 'none' else 'Database: none' }}"
-          - "{{ 'DB Connect: ' + database_engine + ' -h ' + rds_result.endpoint.address + ' -u dbadmin -p' if database_engine != 'none' else '' }}"
+          - "{{ 'PostgreSQL: psql -h ' + rds_result.endpoint.address + ' -U dbadmin -d forrest' if database_engine == 'postgres' else '' }}"
+          - "{{ 'MySQL: mysql -h ' + rds_result.endpoint.address + ' -u dbadmin -p forrest' if database_engine == 'mysql' else '' }}"
+          - "{{ 'DB Password: Forrest2026Demo' if database_engine != 'none' else '' }}"
           - "{{ 'Monitoring: https://console.aws.amazon.com/cloudwatch/home?region=' + region + '#alarmsV2:alarm/' + safe_name + '-cpu-alarm' if enable_monitoring == 'yes' else 'Monitoring: disabled' }}"
           - "TTL: {{ ttl_hours }} hours"
