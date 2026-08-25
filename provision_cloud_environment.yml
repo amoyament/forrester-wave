@@ -20,8 +20,8 @@
       us-west-2: ami-04761b0808e04b499
       eu-west-1: ami-06f878aa175fccba7
     safe_name: "{{ environment_name | regex_replace('[^A-Za-z0-9._-]', '-') }}"
-    db_password: "Forrest2024Demo_SecurePass.123"
-      3532
+    db_password: "Forrest2026Demo"
+
   tasks:
     - name: Display provisioning request
       ansible.builtin.debug:
