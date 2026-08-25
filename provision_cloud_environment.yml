@@ -309,7 +309,8 @@
 
     - name: Provisioning complete
       ansible.builtin.debug:
-        msg:
+        msg: |
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           - "Environment {{ environment_name }} is ready in {{ region }}"
           - "Instance: {{ ec2_result.instances[0].instance_id }} ({{ ec2_result.instances[0].public_ip_address | default('pending') }})"
           - "Web: http://{{ ec2_result.instances[0].public_ip_address | default('pending') }}"
@@ -320,3 +321,4 @@
           - "{{ 'DB Password: Forrest2026Demo' if database_engine != 'none' else '' }}"
           - "{{ 'Monitoring: https://console.aws.amazon.com/cloudwatch/home?region=' + region + '#alarmsV2:alarm/' + safe_name + '-ec2-cpu-alarm' if enable_monitoring == 'yes' else 'Monitoring: disabled' }}"
           - "TTL: {{ ttl_hours }} hours"
+          - "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
