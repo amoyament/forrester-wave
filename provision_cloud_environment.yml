@@ -219,30 +219,14 @@
         msg: "{{ database_engine }} endpoint: {{ rds_result.endpoint.address }}:{{ rds_result.endpoint.port }}"
       when: database_engine != "none"
 
-    - name: Wait for RDS to be accessible
-      ansible.builtin.wait_for:
-        host: "{{ rds_result.endpoint.address }}"
-        port: "{{ db_ports[database_engine] }}"
-        delay: 10
-        timeout: 300
+    - name: Initialize database
+      ansible.builtin.shell: |
+        {% if database_engine == "postgres" %}
+        PGPASSWORD="{{ db_password }}" psql -h {{ rds_result.endpoint.address }} -U dbadmin -tc "CREATE DATABASE forrest;" 2>/dev/null || true
+        {% elif database_engine == "mysql" %}
+        mysql -h {{ rds_result.endpoint.address }} -u dbadmin -p"{{ db_password }}" -e "CREATE DATABASE forrest;" 2>/dev/null || true
+        {% endif %}
       when: database_engine != "none"
-
-    - name: Initialize PostgreSQL database
-      community.postgresql.postgresql_query:
-        login_host: "{{ rds_result.endpoint.address }}"
-        login_user: dbadmin
-        login_password: "{{ db_password }}"
-        query: "CREATE DATABASE forrest;"
-      when: database_engine == "postgres"
-      ignore_errors: true
-
-    - name: Initialize MySQL database
-      community.mysql.mysql_query:
-        login_host: "{{ rds_result.endpoint.address }}"
-        login_user: dbadmin
-        login_password: "{{ db_password }}"
-        query: "CREATE DATABASE forrest;"
-      when: database_engine == "mysql"
       ignore_errors: true
 
     - name: Enable EC2 CPU monitoring
