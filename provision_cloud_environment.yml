@@ -114,7 +114,7 @@
         wait: true
         user_data: |
           #!/bin/bash
-          yum install -y httpd
+          yum install -y httpd postgresql mysql
           cat > /var/www/html/index.html <<'LANDING'
           <!DOCTYPE html>
           <html>
