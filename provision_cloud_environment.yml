@@ -316,8 +316,7 @@
           Web: http://{{ ec2_result.instances[0].public_ip_address | default('pending') }}
           SSH: ssh -i dev-team.pem ec2-user@{{ ec2_result.instances[0].public_ip_address | default('pending') }}
           {{ 'Database: ' + rds_result.endpoint.address + ':' + rds_result.endpoint.port|string if database_engine != 'none' else 'Database: none' }}
-          {{ 'DB Direct: psql -h ' + rds_result.endpoint.address + ' -U dbadmin -d forrest' if database_engine == 'postgresql' else 'DB Direct: mysql -h ' + rds_result.endpoint.address + ' -u dbadmin -p forrest' if database_engine == 'mysql' else '' }}
-          DB via EC2: ssh -i dev-team.pem ec2-user@{{ ec2_result.instances[0].public_ip_address | default('pending') }} then psql/mysql
+          {{ 'DB Connect: ssh -i dev-team.pem ec2-user@' + ec2_result.instances[0].public_ip_address | default('pending') + ' then psql -h ' + rds_result.endpoint.address + ' -U dbadmin -d postgres -W' if database_engine == 'postgresql' else 'DB Connect: ssh -i dev-team.pem ec2-user@' + ec2_result.instances[0].public_ip_address | default('pending') + ' then mysql -h ' + rds_result.endpoint.address + ' -u dbadmin -p' if database_engine == 'mysql' else '' }}
           {{ 'DB Password: Forrest2026Demo' if database_engine != 'none' else '' }}
           {{ 'Monitoring: https://console.aws.amazon.com/cloudwatch/home?region=' + region + '#alarmsV2:alarm/' + safe_name + '-ec2-cpu-alarm' if enable_monitoring == 'yes' else 'Monitoring: disabled' }}
           TTL: {{ ttl_hours }} hours
