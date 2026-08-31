@@ -15,13 +15,13 @@
           - "Safe name: {{ safe_name }}"
 
     # ---------------------------------------------------------------
-    # Step 1: Find the EC2 instance by Name tag
+    # Step 1: Find all EC2 instances for this environment (app + vscode)
     # ---------------------------------------------------------------
-    - name: Find EC2 instance by Name tag
+    - name: Find EC2 instances by Environment tag
       amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
         filters:
-          "tag:Name": "{{ environment_name }}"
+          "tag:Environment": "{{ environment_name }}"
           instance-state-name:
             - running
             - stopped
@@ -33,18 +33,18 @@
       ansible.builtin.debug:
         msg: >-
           {{
-            'Found instance ' + ec2_info.instances[0].instance_id
+            'Found ' + (ec2_info.instances | length | string) + ' instance(s): '
+            + (ec2_info.instances | map(attribute='instance_id') | list | join(', '))
             if ec2_info.instances | length > 0
-            else 'No running or stopped instance found with Name=' + environment_name
+            else 'No running or stopped instance found with Environment=' + environment_name
           }}
 
     # ---------------------------------------------------------------
-    # Step 2: Terminate the EC2 instance
+    # Step 2: Terminate the EC2 instances
     # ---------------------------------------------------------------
-    - name: Terminate EC2 instance
+    - name: Terminate EC2 instances
       amazon.aws.ec2_instance:
-        instance_ids:
-          - "{{ ec2_info.instances[0].instance_id }}"
+        instance_ids: "{{ ec2_info.instances | map(attribute='instance_id') | list }}"
         region: "{{ aws_region }}"
         state: terminated
         wait: false
@@ -53,7 +53,7 @@
 
     - name: EC2 termination initiated
       ansible.builtin.debug:
-        msg: "Termination initiated for {{ ec2_info.instances[0].instance_id }}"
+        msg: "Termination initiated for {{ ec2_info.instances | map(attribute='instance_id') | list | join(', ') }}"
       when: ec2_info.instances | length > 0
 
     # ---------------------------------------------------------------
@@ -94,15 +94,14 @@
     # ---------------------------------------------------------------
     # Step 6: Wait for EC2 instance to reach terminated state
     # ---------------------------------------------------------------
-    - name: Wait for EC2 instance to be terminated
+    - name: Wait for EC2 instances to be terminated
       amazon.aws.ec2_instance_info:
         region: "{{ aws_region }}"
-        instance_ids:
-          - "{{ ec2_info.instances[0].instance_id }}"
+        instance_ids: "{{ ec2_info.instances | map(attribute='instance_id') | list }}"
       register: ec2_wait
       until: >-
         ec2_wait.instances | length == 0
-        or ec2_wait.instances[0].state.name == 'terminated'
+        or (ec2_wait.instances | map(attribute='state.name') | list | unique == ['terminated'])
       retries: 60
       delay: 10
       when: ec2_info.instances | length > 0
@@ -134,7 +133,7 @@
         msg:
           - "Decommission complete for environment: {{ environment_name }}"
           - "Region: {{ region }}"
-          - "EC2 instance: {{ 'terminated (' + ec2_info.instances[0].instance_id + ')' if ec2_info.instances | length > 0 else 'not found' }}"
+          - "EC2 instances: {{ 'terminated (' + (ec2_info.instances | map(attribute='instance_id') | list | join(', ')) + ')' if ec2_info.instances | length > 0 else 'not found' }}"
           - "CloudWatch alarm: {{ 'deleted' if cw_result is succeeded else 'not found or already removed' }}"
           - "RDS instance: {{ 'deleted' if rds_result is succeeded else 'not found or already removed' }}"
           - "RDS subnet group: {{ 'deleted' if dbsubnet_result is succeeded else 'not found or already removed' }}"

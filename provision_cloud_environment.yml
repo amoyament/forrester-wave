@@ -168,6 +168,10 @@
             from_port: 443
             to_port: 443
             cidr_ip: 0.0.0.0/0
+          - proto: tcp
+            from_port: 8080
+            to_port: 8080
+            cidr_ip: 0.0.0.0/0
         tags:
           Name: "{{ safe_name }}-sg"
           Environment: "{{ environment_name }}"
@@ -223,6 +227,7 @@
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
           TTL: "{{ ttl_hours }}"
+          Role: app
           owner: forrest
         state: running
       register: ec2_result
@@ -230,6 +235,62 @@
     - name: EC2 instance launched
       ansible.builtin.debug:
         msg: "Instance {{ ec2_result.instances[0].instance_id }} running at {{ ec2_result.instances[0].public_ip_address | default('pending') }}"
+
+    - name: Launch VS Code environment ({{ instance_size }})
+      amazon.aws.ec2_instance:
+        name: "{{ environment_name }}-vscode"
+        instance_type: "{{ instance_types[instance_size] }}"
+        image_id: "{{ ami_ids[aws_region] }}"
+        region: "{{ aws_region }}"
+        key_name: dev-team
+        security_groups:
+          - "{{ sg_result.group_id }}"
+        wait: true
+        user_data: |
+          #!/bin/bash
+          set -eux
+          curl -fsSL https://code-server.dev/install.sh | sh
+          mkdir -p /home/ec2-user/.config/code-server /home/ec2-user/project
+          cat > /home/ec2-user/.config/code-server/config.yaml <<'CSCONF'
+          bind-addr: 0.0.0.0:8080
+          auth: password
+          password: Forrest2026Demo
+          cert: false
+          CSCONF
+          cat > /home/ec2-user/project/README.md <<'README'
+          # {{ environment_name }}
+          Provisioned by Ansible Automation Portal.
+          App: see the companion instance.
+          Database: {{ database_engine }}
+          Region: {{ region }}
+          README
+          chown -R ec2-user:ec2-user /home/ec2-user/.config /home/ec2-user/project
+          cat > /etc/systemd/system/code-server.service <<'UNIT'
+          [Unit]
+          Description=code-server
+          After=network.target
+          [Service]
+          Type=simple
+          User=ec2-user
+          ExecStart=/usr/bin/code-server --config /home/ec2-user/.config/code-server/config.yaml /home/ec2-user/project
+          Restart=always
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          systemctl daemon-reload
+          systemctl enable --now code-server
+        tags:
+          Environment: "{{ environment_name }}"
+          ManagedBy: ansible-portal
+          TTL: "{{ ttl_hours }}"
+          Role: vscode
+          owner: forrest
+        state: running
+      register: vscode_result
+
+    - name: VS Code instance launched
+      ansible.builtin.debug:
+        msg: "VS Code {{ vscode_result.instances[0].instance_id }} at {{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080 (installing in background)"
 
     - name: Look up default VPC subnets
       amazon.aws.ec2_vpc_subnet_info:
@@ -380,6 +441,19 @@
       ansible.builtin.debug:
         msg: "{{ environment_name }} will auto-terminate in {{ ttl_hours }} hours"
 
+    - name: Wait for VS Code environment
+      ansible.builtin.uri:
+        url: "http://{{ vscode_result.instances[0].public_ip_address }}:8080"
+        status_code:
+          - 200
+          - 302
+          - 401
+      register: vscode_ready
+      until: vscode_ready.status in [200, 302, 401]
+      retries: 36
+      delay: 10
+      ignore_errors: true
+
     - name: Provisioning complete
       ansible.builtin.debug:
         msg: |
@@ -392,11 +466,14 @@
           
           Web: http://{{ ec2_result.instances[0].public_ip_address | default('pending') }}
           
+          VS Code: http://{{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080
+          VS Code password: Forrest2026Demo
+          
           SSH: ssh -i dev-team.pem ec2-user@{{ ec2_result.instances[0].public_ip_address | default('pending') }}
           
           {{ 'Database: ' + rds_result.endpoint.address + ':' + rds_result.endpoint.port|string if database_engine != 'none' else 'Database: none' }}
           
-          {{ 'DB Connect: ssh -i dev-team.pem ec2-user@' + ec2_result.instances[0].public_ip_address | default('pending') + ' then psql -h ' + rds_result.endpoint.address + ' -U dbadmin -d postgres -W' if database_engine == 'postgresql' else 'DB Connect: ssh -i dev-team.pem ec2-user@' + ec2_result.instances[0].public_ip_address | default('pending') + ' then mysql -h ' + rds_result.endpoint.address + ' -u dbadmin -p' if database_engine == 'mysql' else '' }}
+          {{ 'DB Connect: psql -h ' + rds_result.endpoint.address + ' -U dbadmin -d postgres -W' if database_engine == 'postgresql' else 'DB Connect: ssh -i dev-team.pem ec2-user@' + ec2_result.instances[0].public_ip_address | default('pending') + ' then mysql -h ' + rds_result.endpoint.address + ' -u dbadmin -p' if database_engine == 'mysql' else '' }}
           
           {{ 'DB Password: Forrest2026Demo' if database_engine != 'none' else '' }}
           
