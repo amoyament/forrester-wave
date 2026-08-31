@@ -50,14 +50,12 @@
       ansible.builtin.debug:
         msg: |
           
-          ━━━━━━━━━━━━━━━━━━━━━━
           Environment: {{ environment_name }}
           Instance Size: {{ instance_size }}
           Region: {{ region }}
           TTL: {{ ttl_hours }} hours
           Database Engine: {{ database_engine }}
           Monitoring: {{ enable_monitoring }}
-          ━━━━━━━━━━━━━━━━━━━━━━
 
     - name: "Policy: Validate Scope & Infra"
       vars:
@@ -466,7 +464,7 @@
     - name: Provisioning complete
       ansible.builtin.debug:
         msg: |
-        
+
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           Environment {{ environment_name }} is ready in {{ region }}
           Instance: {{ ec2_result.instances[0].instance_id }} ({{ ec2_result.instances[0].public_ip_address | default('pending') }})
