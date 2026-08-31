@@ -63,10 +63,10 @@
         _ok: "{{ _size in policy_approved_sizes and _region in policy_approved_regions }}"
       ansible.builtin.debug:
         msg: |
-          | Requested: {{ _size }} in {{ _region }}
-          | Approved sizes: {{ policy_approved_sizes | join(', ') }}
-          | Approved regions: {{ policy_approved_regions | join(', ') }}
-          | {% if _ok | bool %}PASS: Confirms {{ _size }} and {{ _region }} are approved for Dev scope{% else %}FAIL: {{ _size }} in {{ _region }} is not approved for Dev scope{% endif %}
+          Requested: {{ _size }} in {{ _region }}
+          Approved sizes: {{ policy_approved_sizes | join(', ') }}
+          Approved regions: {{ policy_approved_regions | join(', ') }}
+          {% if _ok | bool %}PASS: Confirms {{ _size }} and {{ _region }} are approved for Dev scope{% else %}FAIL: {{ _size }} in {{ _region }} is not approved for Dev scope{% endif %}
       failed_when: not (_ok | bool)
 
     - name: "Policy: Verify Financial Budget"
@@ -75,10 +75,10 @@
         _ok: "{{ (_cost | int) < (policy_financial_budget_usd | int) }}"
       ansible.builtin.debug:
         msg: |
-          | Instance: {{ instance_size | default('t3.medium') }}
-          | Estimated monthly cost: ${{ _cost }}
-          | Self-service budget: ${{ policy_financial_budget_usd }}/mo
-          | {% if _ok | bool %}PASS: Calculates run cost is under the ${{ policy_financial_budget_usd }}/mo self-service limit{% else %}FAIL: Estimated ${{ _cost }}/mo exceeds the ${{ policy_financial_budget_usd }}/mo self-service limit{% endif %}
+          Instance: {{ instance_size | default('t3.medium') }}
+          Estimated monthly cost: ${{ _cost }}
+          Self-service budget: ${{ policy_financial_budget_usd }}/mo
+          {% if _ok | bool %}PASS: Calculates run cost is under the ${{ policy_financial_budget_usd }}/mo self-service limit{% else %}FAIL: Estimated ${{ _cost }}/mo exceeds the ${{ policy_financial_budget_usd }}/mo self-service limit{% endif %}
       failed_when: not (_ok | bool)
 
     - name: "Policy: Enforce Duration limits"
@@ -87,9 +87,9 @@
         _ok: "{{ (_ttl | int) <= (policy_max_ttl_hours | int) }}"
       ansible.builtin.debug:
         msg: |
-          | Requested TTL: {{ _ttl }} hours
-          | Maximum TTL: {{ policy_max_ttl_hours }} hours
-          | {% if _ok | bool %}PASS: Confirms TTL is <= {{ policy_max_ttl_hours }} hours{% else %}FAIL: TTL {{ _ttl }} exceeds the {{ policy_max_ttl_hours }} hour duration cap{% endif %}
+          Requested TTL: {{ _ttl }} hours
+          Maximum TTL: {{ policy_max_ttl_hours }} hours
+          {% if _ok | bool %}PASS: Confirms TTL is <= {{ policy_max_ttl_hours }} hours{% else %}FAIL: TTL {{ _ttl }} exceeds the {{ policy_max_ttl_hours }} hour duration cap{% endif %}
       failed_when: not (_ok | bool)
 
     - name: "Policy: Check Volume Quotas"
@@ -99,11 +99,13 @@
         _ok: "{{ (_count | int) < (policy_max_active_environments | int) }}"
       ansible.builtin.debug:
         msg: |
-          | Requester: {{ tower_user_name | default(awx_user_name | default('aubrey')) }}
-          | Active environments ({{ _count }}):
-          |   {{ _inventory | join('\n|   ') }}
-          | Limit: {{ policy_max_active_environments }}
-          | {% if _ok | bool %}PASS: Confirms user has < {{ policy_max_active_environments }} active environments{% else %}FAIL: Developer already has {{ _count }} active environments. FinOps policy blocked the build to prevent cloud sprawl.{% endif %}
+          Requester: {{ tower_user_name | default(awx_user_name | default('aubrey')) }}
+          Active environments ({{ _count }}):
+          {%- for env in _inventory %}
+            {{ env }}
+          {%- endfor %}
+          Limit: {{ policy_max_active_environments }}
+          {% if _ok | bool %}PASS: Confirms user has < {{ policy_max_active_environments }} active environments{% else %}FAIL: Developer already has {{ _count }} active environments. FinOps policy blocked the build to prevent cloud sprawl.{% endif %}
       failed_when: not (_ok | bool)
 
     - name: Sending request for approval
