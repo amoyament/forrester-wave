@@ -21,6 +21,7 @@
       eu-west-1: ami-06f878aa175fccba7
     safe_name: "{{ environment_name | regex_replace('[^A-Za-z0-9._-]', '-') }}"
     db_password: "Forrest2026Demo"
+    ec2_ssh_key_path: "{{ lookup('env', 'EC2_SSH_KEY_PATH') | default('/runner/.ssh/dev-team.pem', true) }}"
     # Toggle: add extra var policy_scenario: fail_volume on the JT, launch, then remove it.
     policy_scenario: pass
     policy_approved_sizes:
@@ -255,45 +256,7 @@
         wait: true
         user_data: |
           #!/bin/bash
-          export HOME=/root
-          set -eux
-          dnf install -y tar gzip curl libatomic || yum install -y tar gzip curl libatomic
-          CS_VERSION=4.96.4
-          curl -fsSL -o /tmp/code-server.tgz \
-            "https://github.com/coder/code-server/releases/download/v${CS_VERSION}/code-server-${CS_VERSION}-linux-amd64.tar.gz"
-          mkdir -p /opt
-          tar -C /opt -xzf /tmp/code-server.tgz
-          ln -sfn /opt/code-server-${CS_VERSION}-linux-amd64 /opt/code-server
-          mkdir -p /home/ec2-user/.config/code-server /home/ec2-user/project
-          cat > /home/ec2-user/.config/code-server/config.yaml <<'CSCONF'
-          bind-addr: 0.0.0.0:8080
-          auth: password
-          password: Forrest2026Demo
-          cert: false
-          CSCONF
-          cat > /home/ec2-user/project/README.md <<'README'
-          # {{ environment_name }}
-          Provisioned by Ansible Automation Portal.
-          App: see the companion instance.
-          Database: {{ database_engine }}
-          Region: {{ region }}
-          README
-          chown -R ec2-user:ec2-user /home/ec2-user/.config /home/ec2-user/project
-          cat > /etc/systemd/system/code-server.service <<'UNIT'
-          [Unit]
-          Description=code-server
-          After=network.target
-          [Service]
-          Type=simple
-          User=ec2-user
-          Environment=HOME=/home/ec2-user
-          ExecStart=/opt/code-server/bin/code-server --config /home/ec2-user/.config/code-server/config.yaml /home/ec2-user/project
-          Restart=always
-          [Install]
-          WantedBy=multi-user.target
-          UNIT
-          systemctl daemon-reload
-          systemctl enable --now code-server
+          echo "VS Code will be installed by Ansible over SSH after launch"
         tags:
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
@@ -305,7 +268,26 @@
 
     - name: VS Code instance launched
       ansible.builtin.debug:
-        msg: "VS Code {{ vscode_result.instances[0].instance_id }} at {{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080 (installing in background)"
+        msg: "VS Code {{ vscode_result.instances[0].instance_id }} at {{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080 (installing via SSH)"
+
+    - name: Wait for SSH on VS Code instance
+      ansible.builtin.wait_for:
+        host: "{{ vscode_result.instances[0].public_ip_address }}"
+        port: 22
+        delay: 10
+        timeout: 300
+
+    - name: Install code-server on VS Code instance via SSH
+      ansible.builtin.shell: |
+        ssh -i "{{ ec2_ssh_key_path }}" -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
+          ec2-user@{{ vscode_result.instances[0].public_ip_address }} 'sudo bash -s' \
+          < "{{ playbook_dir }}/scripts/vscode_bootstrap.sh"
+      args:
+        executable: /bin/bash
+      register: vscode_bootstrap
+      retries: 3
+      delay: 20
+      until: vscode_bootstrap.rc == 0
 
     - name: Look up default VPC subnets
       amazon.aws.ec2_vpc_subnet_info:
@@ -465,7 +447,7 @@
           - 401
       register: vscode_ready
       until: vscode_ready.status in [200, 302, 401]
-      retries: 36
+      retries: 60
       delay: 10
       ignore_errors: true
 
@@ -477,6 +459,8 @@
           Environment {{ environment_name }} is ready in {{ region }}
           Instance: {{ ec2_result.instances[0].instance_id }} ({{ ec2_result.instances[0].public_ip_address | default('pending') }})
           Web: http://{{ ec2_result.instances[0].public_ip_address | default('pending') }}
+          VS Code: http://{{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080
+          VS Code password: Forrest2026Demo
           SSH: ssh -i dev-team.pem ec2-user@{{ ec2_result.instances[0].public_ip_address | default('pending') }}
           {{ 'Database: ' + rds_result.endpoint.address + ':' + rds_result.endpoint.port|string if database_engine != 'none' else 'Database: none' }}
           {{ 'DB Connect: ssh -i dev-team.pem ec2-user@' + ec2_result.instances[0].public_ip_address | default('pending') + ' then psql -h ' + rds_result.endpoint.address + ' -U dbadmin -d postgres -W' if database_engine == 'postgresql' else 'DB Connect: ssh -i dev-team.pem ec2-user@' + ec2_result.instances[0].public_ip_address | default('pending') + ' then mysql -h ' + rds_result.endpoint.address + ' -u dbadmin -p' if database_engine == 'mysql' else '' }}
