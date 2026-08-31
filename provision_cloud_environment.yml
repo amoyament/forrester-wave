@@ -21,7 +21,6 @@
       eu-west-1: ami-06f878aa175fccba7
     safe_name: "{{ environment_name | regex_replace('[^A-Za-z0-9._-]', '-') }}"
     db_password: "Forrest2026Demo"
-    ec2_ssh_key_path: "{{ lookup('env', 'EC2_SSH_KEY_PATH') | default('/runner/.ssh/dev-team.pem', true) }}"
     # Toggle: add extra var policy_scenario: fail_volume on the JT, launch, then remove it.
     policy_scenario: pass
     policy_approved_sizes:
@@ -254,9 +253,7 @@
         security_groups:
           - "{{ sg_result.group_id }}"
         wait: true
-        user_data: |
-          #!/bin/bash
-          echo "VS Code will be installed by Ansible over SSH after launch"
+        user_data: "{{ lookup('file', playbook_dir + '/scripts/vscode_bootstrap.sh') }}"
         tags:
           Environment: "{{ environment_name }}"
           ManagedBy: ansible-portal
@@ -268,26 +265,7 @@
 
     - name: VS Code instance launched
       ansible.builtin.debug:
-        msg: "VS Code {{ vscode_result.instances[0].instance_id }} at {{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080 (installing via SSH)"
-
-    - name: Wait for SSH on VS Code instance
-      ansible.builtin.wait_for:
-        host: "{{ vscode_result.instances[0].public_ip_address }}"
-        port: 22
-        delay: 10
-        timeout: 300
-
-    - name: Install code-server on VS Code instance via SSH
-      ansible.builtin.shell: |
-        ssh -i "{{ ec2_ssh_key_path }}" -o StrictHostKeyChecking=no -o ConnectTimeout=15 \
-          ec2-user@{{ vscode_result.instances[0].public_ip_address }} 'sudo bash -s' \
-          < "{{ playbook_dir }}/scripts/vscode_bootstrap.sh"
-      args:
-        executable: /bin/bash
-      register: vscode_bootstrap
-      retries: 3
-      delay: 20
-      until: vscode_bootstrap.rc == 0
+        msg: "VS Code {{ vscode_result.instances[0].instance_id }} at {{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080/login (installing via cloud-init, ~3-5 min)"
 
     - name: Look up default VPC subnets
       amazon.aws.ec2_vpc_subnet_info:

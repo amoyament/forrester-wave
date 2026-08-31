@@ -1,5 +1,5 @@
 #!/bin/bash
-# Installed by Ansible over SSH after the VS Code EC2 instance is up.
+# Runs as EC2 user_data on first boot (cloud-init).
 set -eux
 export HOME=/root
 dnf install -y tar gzip curl libatomic || yum install -y tar gzip curl libatomic
