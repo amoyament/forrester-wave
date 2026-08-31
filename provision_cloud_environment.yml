@@ -48,13 +48,16 @@
   tasks:
     - name: Display provisioning request
       ansible.builtin.debug:
-        msg:
-          - "Environment: {{ environment_name }}"
-          - "Instance Size: {{ instance_size }}"
-          - "Region: {{ region }}"
-          - "TTL: {{ ttl_hours }} hours"
-          - "Database Engine: {{ database_engine }}"
-          - "Monitoring: {{ enable_monitoring }}"
+        msg: |
+
+          ===============================================
+            Environment: {{ environment_name }}
+            Instance Size: {{ instance_size }}
+            Region: {{ region }}
+            TTL: {{ ttl_hours }} hours
+            Database Engine: {{ database_engine }}
+            Monitoring: {{ enable_monitoring }}
+          ===============================================
 
     - name: "Policy: Validate Scope & Infra"
       vars:
@@ -63,6 +66,7 @@
         _ok: "{{ _size in policy_approved_sizes and _region in policy_approved_regions }}"
       ansible.builtin.debug:
         msg: |
+
           Requested: {{ _size }} in {{ _region }}
           Approved sizes: {{ policy_approved_sizes | join(', ') }}
           Approved regions: {{ policy_approved_regions | join(', ') }}
@@ -75,6 +79,7 @@
         _ok: "{{ (_cost | int) < (policy_financial_budget_usd | int) }}"
       ansible.builtin.debug:
         msg: |
+
           Instance: {{ instance_size | default('t3.medium') }}
           Estimated monthly cost: ${{ _cost }}
           Self-service budget: ${{ policy_financial_budget_usd }}/mo
@@ -87,6 +92,7 @@
         _ok: "{{ (_ttl | int) <= (policy_max_ttl_hours | int) }}"
       ansible.builtin.debug:
         msg: |
+
           Requested TTL: {{ _ttl }} hours
           Maximum TTL: {{ policy_max_ttl_hours }} hours
           {% if _ok | bool %}PASS: Confirms TTL is <= {{ policy_max_ttl_hours }} hours{% else %}FAIL: TTL {{ _ttl }} exceeds the {{ policy_max_ttl_hours }} hour duration cap{% endif %}
@@ -99,6 +105,7 @@
         _ok: "{{ (_count | int) < (policy_max_active_environments | int) }}"
       ansible.builtin.debug:
         msg: |
+        
           Requester: {{ tower_user_name | default(awx_user_name | default('aubrey')) }}
           Active environments ({{ _count }}):
           {%- for env in _inventory %}
@@ -460,7 +467,7 @@
       ansible.builtin.debug:
         msg: |
 
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ===============================================
           
           Environment {{ environment_name }} is ready in {{ region }}
           
@@ -483,4 +490,4 @@
           
           TTL: {{ ttl_hours }} hours
           
-          ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          ===============================================
