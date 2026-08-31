@@ -21,6 +21,29 @@
       eu-west-1: ami-06f878aa175fccba7
     safe_name: "{{ environment_name | regex_replace('[^A-Za-z0-9._-]', '-') }}"
     db_password: "Forrest2026Demo"
+    # Toggle: add extra var policy_scenario: fail_volume on the JT, launch, then remove it.
+    policy_scenario: pass
+    policy_approved_sizes:
+      - t3.small
+      - t3.medium
+      - t3.large
+    policy_approved_regions:
+      - us-east-1
+      - us-west-2
+      - eu-west-1
+    policy_financial_budget_usd: 500
+    policy_instance_monthly_cost:
+      t3.small: 15
+      t3.medium: 30
+      t3.large: 60
+    policy_max_ttl_hours: 72
+    policy_max_active_environments: 3
+    policy_dummy_inventory_pass:
+      - "forrester-demo (t3.medium, us-east-1)"
+    policy_dummy_inventory_fail:
+      - "demo-api-1 (t3.medium, us-east-1)"
+      - "demo-web-2 (t3.small, us-west-2)"
+      - "demo-batch-3 (t3.large, us-east-1)"
 
   tasks:
     - name: Display provisioning request
@@ -32,6 +55,56 @@
           - "TTL: {{ ttl_hours }} hours"
           - "Database Engine: {{ database_engine }}"
           - "Monitoring: {{ enable_monitoring }}"
+
+    - name: "Policy: Validate Scope & Infra"
+      vars:
+        _size: "{{ instance_size | default('t3.medium') }}"
+        _region: "{{ region | default('us-east-1') }}"
+        _ok: "{{ _size in policy_approved_sizes and _region in policy_approved_regions }}"
+      ansible.builtin.debug:
+        msg:
+          - "Requested: {{ _size }} in {{ _region }}"
+          - "Approved sizes: {{ policy_approved_sizes | join(', ') }}"
+          - "Approved regions: {{ policy_approved_regions | join(', ') }}"
+          - "{{ 'PASS: Confirms ' ~ _size ~ ' and ' ~ _region ~ ' are approved for Dev scope' if _ok | bool else 'FAIL: ' ~ _size ~ ' in ' ~ _region ~ ' is not approved for Dev scope' }}"
+      failed_when: not (_ok | bool)
+
+    - name: "Policy: Verify Financial Budget"
+      vars:
+        _cost: "{{ policy_instance_monthly_cost[instance_size | default('t3.medium')] | default(30) | int }}"
+        _ok: "{{ (_cost | int) < (policy_financial_budget_usd | int) }}"
+      ansible.builtin.debug:
+        msg:
+          - "Instance: {{ instance_size | default('t3.medium') }}"
+          - "Estimated monthly cost: ${{ _cost }}"
+          - "Self-service budget: ${{ policy_financial_budget_usd }}/mo"
+          - "{{ 'PASS: Calculates run cost is under the $' ~ policy_financial_budget_usd ~ '/mo self-service limit' if _ok | bool else 'FAIL: Estimated $' ~ _cost ~ '/mo exceeds $' ~ policy_financial_budget_usd ~ '/mo self-service limit' }}"
+      failed_when: not (_ok | bool)
+
+    - name: "Policy: Enforce Duration limits"
+      vars:
+        _ttl: "{{ ttl_hours | default(8) | int }}"
+        _ok: "{{ (_ttl | int) <= (policy_max_ttl_hours | int) }}"
+      ansible.builtin.debug:
+        msg:
+          - "Requested TTL: {{ _ttl }} hours"
+          - "Maximum TTL: {{ policy_max_ttl_hours }} hours"
+          - "{{ 'PASS: Confirms TTL is <= ' ~ policy_max_ttl_hours ~ ' hours' if _ok | bool else 'FAIL: TTL ' ~ _ttl ~ ' exceeds the ' ~ policy_max_ttl_hours ~ ' hour duration cap' }}"
+      failed_when: not (_ok | bool)
+
+    - name: "Policy: Check Volume Quotas"
+      vars:
+        _inventory: "{{ policy_dummy_inventory_fail if (policy_scenario | default('pass')) == 'fail_volume' else policy_dummy_inventory_pass }}"
+        _count: "{{ _inventory | length }}"
+        _ok: "{{ (_count | int) < (policy_max_active_environments | int) }}"
+      ansible.builtin.debug:
+        msg:
+          - "Requester: {{ tower_user_name | default(awx_user_name | default('aubrey')) }}"
+          - "Active environments ({{ _count }}):"
+          - "{{ _inventory }}"
+          - "Limit: {{ policy_max_active_environments }}"
+          - "{{ 'PASS: Confirms user has < ' ~ policy_max_active_environments ~ ' active environments' if _ok | bool else 'FAIL: Developer already has ' ~ _count ~ ' active environments. FinOps policy blocked the build to prevent cloud sprawl.' }}"
+      failed_when: not (_ok | bool)
 
     - name: Sending request for approval
       ansible.builtin.uri:
@@ -310,14 +383,25 @@
     - name: Provisioning complete
       ansible.builtin.debug:
         msg: |
+
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          
           Environment {{ environment_name }} is ready in {{ region }}
+          
           Instance: {{ ec2_result.instances[0].instance_id }} ({{ ec2_result.instances[0].public_ip_address | default('pending') }})
+          
           Web: http://{{ ec2_result.instances[0].public_ip_address | default('pending') }}
+          
           SSH: ssh -i dev-team.pem ec2-user@{{ ec2_result.instances[0].public_ip_address | default('pending') }}
+          
           {{ 'Database: ' + rds_result.endpoint.address + ':' + rds_result.endpoint.port|string if database_engine != 'none' else 'Database: none' }}
+          
           {{ 'DB Connect: ssh -i dev-team.pem ec2-user@' + ec2_result.instances[0].public_ip_address | default('pending') + ' then psql -h ' + rds_result.endpoint.address + ' -U dbadmin -d postgres -W' if database_engine == 'postgresql' else 'DB Connect: ssh -i dev-team.pem ec2-user@' + ec2_result.instances[0].public_ip_address | default('pending') + ' then mysql -h ' + rds_result.endpoint.address + ' -u dbadmin -p' if database_engine == 'mysql' else '' }}
+          
           {{ 'DB Password: Forrest2026Demo' if database_engine != 'none' else '' }}
+          
           {{ 'Monitoring: https://console.aws.amazon.com/cloudwatch/home?region=' + region + '#alarmsV2:alarm/' + safe_name + '-ec2-cpu-alarm' if enable_monitoring == 'yes' else 'Monitoring: disabled' }}
+          
           TTL: {{ ttl_hours }} hours
+          
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

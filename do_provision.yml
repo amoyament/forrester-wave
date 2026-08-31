@@ -1,4 +1,6 @@
 ---
+# Post-approval stub in the workflow. Policy-as-Code runs earlier, in
+# provision_cloud_environment.yml, before the approval request is sent.
 - name: Execute Cloud Provisioning
   hosts: localhost
   connection: local
