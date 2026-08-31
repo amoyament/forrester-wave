@@ -49,6 +49,7 @@
     - name: Display provisioning request
       ansible.builtin.debug:
         msg: |
+
           ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           Environment: {{ environment_name }}
           Instance Size: {{ instance_size }}
