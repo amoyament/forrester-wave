@@ -186,63 +186,6 @@
           owner: forrest
       register: sg_result
 
-    - name: Launch EC2 instance ({{ instance_size }})
-      amazon.aws.ec2_instance:
-        name: "{{ environment_name }}"
-        instance_type: "{{ instance_types[instance_size] }}"
-        image_id: "{{ ami_ids[aws_region] }}"
-        region: "{{ aws_region }}"
-        key_name: dev-team
-        security_groups:
-          - "{{ sg_result.group_id }}"
-        wait: true
-        user_data: |
-          #!/bin/bash
-          yum install -y httpd postgresql mysql
-          cat > /var/www/html/index.html <<'LANDING'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>{{ environment_name }}</title>
-            <style>
-              body { font-family: sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-              .card { background: #16213e; border-radius: 12px; padding: 40px; max-width: 600px; box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
-              h1 { color: #e94560; margin-top: 0; }
-              .detail { margin: 12px 0; padding: 8px 12px; background: #0f3460; border-radius: 6px; }
-              .label { color: #a0a0a0; font-size: 0.85em; }
-              .value { color: #fff; font-weight: bold; }
-              .status { color: #4ecca3; font-weight: bold; font-size: 1.1em; }
-            </style>
-          </head>
-          <body>
-            <div class="card">
-              <h1>{{ environment_name }}</h1>
-              <p class="status">Environment Active</p>
-              <div class="detail"><span class="label">Instance Size:</span> <span class="value">{{ instance_size }}</span></div>
-              <div class="detail"><span class="label">Region:</span> <span class="value">{{ region }}</span></div>
-              <div class="detail"><span class="label">Database:</span> <span class="value">{{ database_engine }}</span></div>
-              <div class="detail"><span class="label">Monitoring:</span> <span class="value">{{ enable_monitoring }}</span></div>
-              <div class="detail"><span class="label">TTL:</span> <span class="value">{{ ttl_hours }} hours</span></div>
-              <div class="detail"><span class="label">Provisioned by:</span> <span class="value">Ansible Automation Portal</span></div>
-            </div>
-          </body>
-          </html>
-          LANDING
-          systemctl enable httpd
-          systemctl start httpd
-        tags:
-          Environment: "{{ environment_name }}"
-          ManagedBy: ansible-portal
-          TTL: "{{ ttl_hours }}"
-          Role: app
-          owner: forrest
-        state: running
-      register: ec2_result
-
-    - name: EC2 instance launched
-      ansible.builtin.debug:
-        msg: "Instance {{ ec2_result.instances[0].instance_id }} running at {{ ec2_result.instances[0].public_ip_address | default('pending') }}"
-
     - name: Launch VS Code environment ({{ instance_size }})
       amazon.aws.ec2_instance:
         name: "{{ environment_name }}-vscode"
@@ -266,6 +209,68 @@
     - name: VS Code instance launched
       ansible.builtin.debug:
         msg: "VS Code {{ vscode_result.instances[0].instance_id }} at {{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080/login (installing via cloud-init, ~3-5 min)"
+
+    - name: Launch EC2 instance ({{ instance_size }})
+      amazon.aws.ec2_instance:
+        name: "{{ environment_name }}"
+        instance_type: "{{ instance_types[instance_size] }}"
+        image_id: "{{ ami_ids[aws_region] }}"
+        region: "{{ aws_region }}"
+        key_name: dev-team
+        security_groups:
+          - "{{ sg_result.group_id }}"
+        wait: true
+        user_data: |
+          #!/bin/bash
+          yum install -y httpd postgresql mysql
+          cat > /var/www/html/index.html <<'LANDING'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>{{ environment_name }}</title>
+            <style>
+              body { font-family: sans-serif; background: #1a1a2e; color: #e0e0e0; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+              .card { background: #16213e; border-radius: 12px; padding: 40px; max-width: 640px; box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
+              h1 { color: #e94560; margin-top: 0; }
+              .detail { margin: 12px 0; padding: 8px 12px; background: #0f3460; border-radius: 6px; }
+              .label { color: #a0a0a0; font-size: 0.85em; }
+              .value { color: #fff; font-weight: bold; }
+              .status { color: #4ecca3; font-weight: bold; font-size: 1.1em; }
+              a { color: #4ecca3; text-decoration: none; font-weight: bold; }
+              a:hover { text-decoration: underline; }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>{{ environment_name }}</h1>
+              <p class="status">Environment Active</p>
+              <div class="detail"><span class="label">Instance Size:</span> <span class="value">{{ instance_size }}</span></div>
+              <div class="detail"><span class="label">Region:</span> <span class="value">{{ region }}</span></div>
+              <div class="detail"><span class="label">Database:</span> <span class="value">{{ database_engine }}</span></div>
+              <div class="detail"><span class="label">Monitoring:</span> <span class="value">{{ enable_monitoring }}</span></div>
+              <div class="detail"><span class="label">TTL:</span> <span class="value">{{ ttl_hours }} hours</span></div>
+              <div class="detail"><span class="label">VS Code IDE:</span> <span class="value"><a href="http://{{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080/login" target="_blank">Open browser IDE</a></span></div>
+              <div class="detail"><span class="label">VS Code URL:</span> <span class="value">http://{{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080/login</span></div>
+              <div class="detail"><span class="label">VS Code password:</span> <span class="value">Forrest2026Demo</span></div>
+              <div class="detail"><span class="label">Provisioned by:</span> <span class="value">Ansible Automation Portal</span></div>
+            </div>
+          </body>
+          </html>
+          LANDING
+          systemctl enable httpd
+          systemctl start httpd
+        tags:
+          Environment: "{{ environment_name }}"
+          ManagedBy: ansible-portal
+          TTL: "{{ ttl_hours }}"
+          Role: app
+          owner: forrest
+        state: running
+      register: ec2_result
+
+    - name: EC2 instance launched
+      ansible.builtin.debug:
+        msg: "App {{ ec2_result.instances[0].instance_id }} at {{ ec2_result.instances[0].public_ip_address | default('pending') }} (landing page links to VS Code)"
 
     - name: Look up default VPC subnets
       amazon.aws.ec2_vpc_subnet_info:
@@ -437,7 +442,7 @@
           Environment {{ environment_name }} is ready in {{ region }}
           Instance: {{ ec2_result.instances[0].instance_id }} ({{ ec2_result.instances[0].public_ip_address | default('pending') }})
           Web: http://{{ ec2_result.instances[0].public_ip_address | default('pending') }}
-          VS Code: http://{{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080
+          VS Code: http://{{ vscode_result.instances[0].public_ip_address | default('pending') }}:8080/login
           VS Code password: Forrest2026Demo
           SSH: ssh -i dev-team.pem ec2-user@{{ ec2_result.instances[0].public_ip_address | default('pending') }}
           {{ 'Database: ' + rds_result.endpoint.address + ':' + rds_result.endpoint.port|string if database_engine != 'none' else 'Database: none' }}
