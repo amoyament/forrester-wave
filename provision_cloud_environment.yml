@@ -255,8 +255,15 @@
         wait: true
         user_data: |
           #!/bin/bash
+          export HOME=/root
           set -eux
-          curl -fsSL https://code-server.dev/install.sh | sh
+          dnf install -y tar gzip curl libatomic || yum install -y tar gzip curl libatomic
+          CS_VERSION=4.96.4
+          curl -fsSL -o /tmp/code-server.tgz \
+            "https://github.com/coder/code-server/releases/download/v${CS_VERSION}/code-server-${CS_VERSION}-linux-amd64.tar.gz"
+          mkdir -p /opt
+          tar -C /opt -xzf /tmp/code-server.tgz
+          ln -sfn /opt/code-server-${CS_VERSION}-linux-amd64 /opt/code-server
           mkdir -p /home/ec2-user/.config/code-server /home/ec2-user/project
           cat > /home/ec2-user/.config/code-server/config.yaml <<'CSCONF'
           bind-addr: 0.0.0.0:8080
@@ -279,7 +286,8 @@
           [Service]
           Type=simple
           User=ec2-user
-          ExecStart=/usr/bin/code-server --config /home/ec2-user/.config/code-server/config.yaml /home/ec2-user/project
+          Environment=HOME=/home/ec2-user
+          ExecStart=/opt/code-server/bin/code-server --config /home/ec2-user/.config/code-server/config.yaml /home/ec2-user/project
           Restart=always
           [Install]
           WantedBy=multi-user.target
